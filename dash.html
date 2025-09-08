@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IoT Sensor Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css">
+  
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+</head>
+<body class="min-h-screen flex flex-col">
+  <div id="background-animation"></div>
+  
+  <header class="bg-header z-10">
+    <div class="container mx-auto px-4 py-6">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <div>
+          <h1 class="text-2xl md:text-3xl font-bold text-header-text"><i class="fas fa-chart-line mr-2"></i> Smart City IoT Dashboard</h1>
+          <p class="text-header-subtext mt-1">Real-time environmental monitoring</p>
+        </div>
+        <div class="mt-4 md:mt-0 flex items-center space-x-4">
+          <div class="relative">
+            <button id="alert-bell-btn" class="bg-card text-text-primary text-xl p-2 rounded-full hover:bg-card-header focus:outline-none relative">
+              <i class="fas fa-bell"></i>
+              <span id="alert-count-badge" class="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-100 bg-red-600 rounded-full hidden">0</span>
+            </button>
+          </div>
+          <div class="bg-header-accent px-3 py-1 rounded-full text-sm flex items-center"><span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span><span class="text-header-text">Live Data</span></div>
+          <div class="text-header-subtext text-sm">Last updated: <span id="lastUpdated">--</span></div>
+          <button id="theme-switcher-btn" class="bg-card text-text-primary text-xl p-2 rounded-full hover:bg-card-header focus:outline-none"><i class="fas fa-moon"></i></button>
+        </div>
+      </div>
+    </div>
+  </header>
+  
+  <main class="flex-grow container mx-auto px-4 py-8 z-10">
+    <div class="mb-6 border-b border-border"><nav class="flex space-x-4" aria-label="Tabs"><button id="tab-gauge" class="tab-button tab-active shadow-sm"><i class="fas fa-tachometer-alt mr-2"></i>Gauge</button><button id="tab-analytics" class="tab-button shadow-sm"><i class="fas fa-chart-bar mr-2"></i>Analytical Data</button></nav></div>
+
+    <div id="tab-content-gauge">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="bg-card rounded-xl shadow-md overflow-hidden p-4"><h3 class="text-text-secondary font-semibold mb-2">Temperature</h3><div class="gauge"><div class="gauge-body"><div class="gauge-fill" id="temp-gauge-fill"></div></div><div class="gauge-cover" id="temp-gauge-cover">--</div></div></div>
+        <div class="bg-card rounded-xl shadow-md overflow-hidden p-4"><h3 class="text-text-secondary font-semibold mb-2">Humidity</h3><div class="gauge"><div class="gauge-body"><div class="gauge-fill" id="humidity-gauge-fill"></div></div><div class="gauge-cover" id="humidity-gauge-cover">--</div></div></div>
+        <div class="bg-card rounded-xl shadow-md overflow-hidden p-4"><h3 class="text-text-secondary font-semibold mb-2">CO₂ Level</h3><div class="gauge"><div class="gauge-body"><div class="gauge-fill" id="carbon-gauge-fill"></div></div><div class="gauge-cover" id="carbon-gauge-cover">--</div></div></div>
+        <div class="bg-card rounded-xl shadow-md overflow-hidden p-4"><h3 class="text-text-secondary font-semibold mb-2">Prediction</h3><div class="gauge"><div class="gauge-body"><div class="gauge-fill" id="prediction-gauge-fill"></div></div><div class="gauge-cover" id="prediction-gauge-cover">--</div></div></div>
+      </div>
+    </div>
+    
+    <div id="tab-content-analytics" class="hidden">
+      <div class="bg-card rounded-xl shadow-md p-6">
+        <h2 class="text-xl font-bold text-text-primary mb-4">Historical Data Analysis</h2>
+        <div class="flex flex-wrap gap-4 mb-4"><select id="chart-time-filter" class="filter-select"><option value="all">All Time</option><option value="24h">Last 24 Hours</option><option value="7d">Last 7 Days</option></select><select id="chart-data-filter" class="filter-select"><option value="carbon">Carbon (ppm)</option><option value="temperature">Temperature (°C)</option><option value="humidity">Humidity (%)</option></select></div>
+        <div class="h-80">
+          <canvas id="analytics-chart"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 my-8">
+      <div class="bg-card rounded-xl shadow-md overflow-hidden lg:col-span-1"><div class="card-header px-6 py-4 bg-card-header"><h2 class="text-lg font-semibold text-text-primary"><i class="fas fa-map-marker-alt text-red-500 mr-2"></i> Sensor Location</h2></div><div class="p-6"><div class="text-sm text-text-secondary">Coordinates</div><div id="sensorLocationVal" class="font-medium text-text-primary">Loading...</div><div class="text-sm text-text-secondary mt-2">Address</div><div id="sensorLocationName" class="font-medium text-text-primary">Loading...</div></div></div>
+      <div class="bg-card rounded-xl shadow-md overflow-hidden lg:col-span-1">
+        <div class="card-header px-6 py-4 bg-card-header flex justify-between items-center">
+          <h2 class="text-lg font-semibold text-text-primary"><i class="fas fa-map text-green-600 mr-2"></i> Sensor Map</h2>
+          <select id="map-type-filter" class="filter-select text-sm">
+            <option value="marker">Marker</option>
+            <option value="temperature">Temperature</option>
+            <option value="humidity">Humidity</option>
+            <option value="co2" selected>CO2</option>
+          </select>
+        </div>
+        <div class="p-4 relative">
+          <div id="map" class="rounded-lg overflow-hidden h-64"></div>
+          <div id="map-legend" class="absolute bottom-6 right-6 bg-white bg-opacity-75 p-2 rounded-md shadow-lg hidden text-xs"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast-container" class="fixed top-5 right-5 z-50 space-y-3"></div>
+
+  <footer class="bg-card border-t border-border py-4 z-10"><div class="container mx-auto px-4"><div class="text-center text-text-secondary text-sm">&copy; 2025 Smart City IoT Platform. All rights reserved.</div></div></footer>
+
+  <div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-card rounded-lg shadow-xl p-6 w-full max-w-md m-4">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold text-text-primary"><i class="fas fa-bell mr-2"></i> Recent Alerts</h3>
+        <button id="close-alert-modal-btn" class="text-text-secondary hover:text-text-primary text-2xl">&times;</button>
+      </div>
+      <div id="alerts-list" class="space-y-4 max-h-80 overflow-y-auto pr-2">
+        <p id="no-alerts-message" class="text-text-secondary text-center">No recent alerts.</p>
+      </div>
+      <div class="mt-6 text-right">
+        <button id="clear-all-alerts-btn" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors duration-300 text-sm">Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
