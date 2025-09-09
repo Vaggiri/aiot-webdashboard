@@ -101,3 +101,52 @@ header {
 #map { height: 250px; }
 #theme-switcher-btn { box-shadow: none !important; }
 
+/* Add to style.css for smoother transitions */
+.gauge-fill {
+    /* Make the needle movement smooth */
+    transition: transform 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.gauge-cover {
+    /* Make the background color change smooth */
+    transition: background-color 0.5s;
+}
+
+/* Animation for number counting up */
+@keyframes count-up {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-count-up {
+  animation: count-up 0.5s ease-out forwards;
+}
+
+/* Add to style.css */
+
+/* --- Professional Leaflet Layer Control Styles --- */
+.leaflet-control-layers {
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--card-shadow);
+    border-radius: 8px;
+}
+.leaflet-control-layers-base label,
+.leaflet-control-layers-overlays label {
+    color: var(--color-text-primary);
+    font-weight: 500;
+}
+.leaflet-control-layers-separator {
+    border-top: 1px solid var(--color-border);
+}
+
+[data-theme='dark'] .leaflet-control-layers a {
+    color: var(--color-text-primary);
+}
+

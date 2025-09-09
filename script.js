@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- GLOBAL VARIABLES ---
   let analyticsChart = null;
   let historicalData = []; // To store a history of live data points for charts
-  let map, mainMarker, heatLayer;
+  let map, mainMarker;
   const userDetails = JSON.parse(localStorage.getItem('userDetails'));
   let activeAlerts = [];
   let unreadAlertCount = 0;
@@ -15,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const alertsList = document.getElementById('alerts-list');
   const noAlertsMessage = document.getElementById('no-alerts-message');
   const clearAllAlertsBtn = document.getElementById('clear-all-alerts-btn');
-  const mapTypeFilter = document.getElementById('map-type-filter');
   const mapLegend = document.getElementById('map-legend');
 
   // --- THEME & TABS ---
@@ -48,18 +47,92 @@ document.addEventListener('DOMContentLoaded', () => {
         checkThresholds(formattedData);
         
         historicalData.push(formattedData);
-        if (historicalData.length > 10) {
+        if (historicalData.length > 20) { // Increased history for better heatmap
             historicalData.shift();
         }
 
         if (!tabs.analytics.content.classList.contains('hidden')) { renderAnalyticsChart(); }
-        updateMapDisplay();
+        updateAllHeatmaps();
       }
     } catch (error) { console.error("Failed to fetch live data:", error); }
   }
 
+  // --- DATA INSIGHTS ---
+  function updateStatusPanel(data) {
+    const statusPanel = document.getElementById('status-panel');
+    const statusIcon = document.getElementById('status-icon');
+    const statusText = document.getElementById('status-text');
+    const statusSuggestion = document.getElementById('status-suggestion');
+
+    if (data.carbon > THRESHOLDS.co2) {
+        statusPanel.className = 'flex items-center p-4 rounded-lg transition-all duration-500 bg-red-500 bg-opacity-20';
+        statusIcon.innerHTML = '<i class="fas fa-wind text-red-500"></i>';
+        statusText.textContent = 'High CO₂ Levels Detected!';
+        statusSuggestion.textContent = 'Suggestion: Ensure proper ventilation in the area. High CO₂ can affect cognitive function.';
+    } else if (data.temperature > THRESHOLDS.temp) {
+        statusPanel.className = 'flex items-center p-4 rounded-lg transition-all duration-500 bg-red-500 bg-opacity-20';
+        statusIcon.innerHTML = '<i class="fas fa-temperature-high text-red-500"></i>';
+        statusText.textContent = 'High Temperature Alert!';
+        statusSuggestion.textContent = 'Suggestion: Check for potential fire hazards or malfunctioning cooling systems.';
+    } else if (data.humidity > THRESHOLDS.humidity) {
+        statusPanel.className = 'flex items-center p-4 rounded-lg transition-all duration-500 bg-yellow-500 bg-opacity-20';
+        statusIcon.innerHTML = '<i class="fas fa-tint text-yellow-500"></i>';
+        statusText.textContent = 'High Humidity Detected.';
+        statusSuggestion.textContent = 'Suggestion: Monitor for conditions that could lead to mold growth or equipment damage.';
+    } else {
+        statusPanel.className = 'flex items-center p-4 rounded-lg transition-all duration-500 bg-green-500 bg-opacity-20';
+        statusIcon.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
+        statusText.textContent = 'All Systems Normal.';
+        
+        if (historicalData.length > 5) {
+            const oldCarbon = historicalData[0].carbon;
+            const trend = data.carbon - oldCarbon;
+            if (trend > 50) {
+                 statusSuggestion.textContent = `Observation: CO₂ levels are trending upwards (increased by ${trend.toFixed(0)} ppm recently).`;
+            } else if (trend < -50) {
+                 statusSuggestion.textContent = `Observation: CO₂ levels are trending downwards. Air quality is improving.`;
+            } else {
+                 statusSuggestion.textContent = 'Environmental conditions are stable.';
+            }
+        } else {
+             statusSuggestion.textContent = 'Environmental conditions are stable.';
+        }
+    }
+  }
+
   // --- DASHBOARD UPDATE ---
-  function updateGauge(fillId, coverId, value, max, unit) { const fillEl = document.getElementById(fillId); const coverEl = document.getElementById(coverId); if (!fillEl || !coverEl) return; const percentage = Math.max(0, Math.min(1, value / max)); fillEl.style.transform = `rotate(${percentage / 2}turn)`; coverEl.innerHTML = `${value.toFixed(0)}<span>${unit}</span>`; }
+  function updateGauge(fillId, coverId, value, max, unit) {
+    const fillEl = document.getElementById(fillId);
+    const coverEl = document.getElementById(coverId);
+    if (!fillEl || !coverEl) return;
+
+    const percentage = Math.max(0, Math.min(1, value / max));
+    fillEl.style.transform = `rotate(${percentage / 2}turn)`;
+
+    const coverValueEl = coverEl.firstChild; 
+    const startValue = parseFloat(coverValueEl?.nodeValue) || 0;
+    const endValue = value;
+
+    if (startValue === endValue) {
+        coverEl.innerHTML = `${endValue.toFixed(0)}<span>${unit}</span>`;
+        return;
+    }
+    
+    const duration = 800;
+    let startTime = null;
+
+    function animationStep(timestamp) {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        const currentValue = startValue + (endValue - startValue) * progress;
+        coverEl.innerHTML = `${currentValue.toFixed(0)}<span>${unit}</span>`;
+        if (progress < 1) {
+            requestAnimationFrame(animationStep);
+        }
+    }
+    requestAnimationFrame(animationStep);
+  }
+  
   function updateDashboard(data) {
     document.getElementById("lastUpdated").textContent = new Date(data.timestamp).toLocaleTimeString('en-US');
     updateGauge('temp-gauge-fill', 'temp-gauge-cover', data.temperature, 50, '°C');
@@ -69,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById("sensorLocationVal").textContent = `${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`;
     document.getElementById("sensorLocationName").textContent = data.locationName;
     mainMarker.setLatLng([data.latitude, data.longitude]);
+    updateStatusPanel(data);
   }
 
   // --- ALERTING SYSTEM ---
@@ -84,52 +158,51 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateAlertBadge() { if (unreadAlertCount > 0) { alertCountBadge.textContent = unreadAlertCount; alertCountBadge.classList.remove('hidden'); } else { alertCountBadge.classList.add('hidden'); } }
   function renderAlertsInModal() { alertsList.innerHTML = ''; if (activeAlerts.length === 0) { noAlertsMessage.classList.remove('hidden'); alertsList.appendChild(noAlertsMessage); } else { noAlertsMessage.classList.add('hidden'); activeAlerts.forEach(alert => { const alertDiv = document.createElement('div'); alertDiv.className = `bg-card-header p-3 rounded-md border-l-4 ${alert.type === 'error' ? 'border-red-500' : 'border-yellow-500'}`; alertDiv.innerHTML = `<p class="font-semibold text-text-primary">${alert.metric}: ${alert.value}</p><p class="text-xs text-text-secondary">${alert.location}</p><p class="text-xs text-text-secondary">${alert.timestamp}</p>`; alertsList.appendChild(alertDiv); }); } }
   
-  // --- HEATMAP LOGIC ---
-  mapTypeFilter.addEventListener('change', updateMapDisplay);
+  // --- GLOBAL MAP VARIABLES ---
+  let tempHeatLayer, humidityHeatLayer, co2HeatLayer, layerControl;
 
+  // --- HEATMAP LOGIC ---
   function getGradient(type) {
-    if (type === 'temperature') { return { 0.0: '#00008b', 0.5: '#0000ff', 0.88: '#ffff00', 0.9: '#ff0000' }; }
-    if (type === 'humidity') { return { 0.33: '#ff0000', 0.66: '#ffff00', 1.0: '#0000ff' }; }
-    if (type === 'co2') { return { 0.33: '#008000', 0.83: '#ffff00', 0.84: '#ff0000' }; }
-    return {};
+      if (type === 'temperature') { return { 0.4: '#0000ff', 0.8: '#ffff00', 1.0: '#ff0000' }; }
+      if (type === 'humidity') { return { 0.4: '#ffff00', 0.8: '#0000ff', 1.0: '#00008b' }; }
+      if (type === 'co2') { return { 0.4: '#008000', 0.8: '#ffff00', 1.0: '#ff0000' }; }
+      return {};
   }
 
-  function updateMapDisplay() {
-    const mapType = mapTypeFilter.value;
-    if (heatLayer) map.removeLayer(heatLayer);
-    mainMarker.setOpacity(0);
+  function updateAllHeatmaps() {
+      if (historicalData.length > 0) {
+          const tempPoints = historicalData.map(d => [d.latitude, d.longitude, d.temperature]);
+          const humidityPoints = historicalData.map(d => [d.latitude, d.longitude, d.humidity]);
+          const co2Points = historicalData.map(d => [d.latitude, d.longitude, d.carbon]);
 
-    if (mapType === 'marker') {
-        mainMarker.setOpacity(1);
-        mapLegend.classList.add('hidden');
-    } else {
-        if (historicalData.length > 0) {
-            let heatPoints = [];
-            let maxValue = 1;
-
-            if (mapType === 'temperature') { heatPoints = historicalData.map(d => [d.latitude, d.longitude, d.temperature]); maxValue = 50; }
-            else if (mapType === 'humidity') { heatPoints = historicalData.map(d => [d.latitude, d.longitude, d.humidity]); maxValue = 100; }
-            else if (mapType === 'co2') { heatPoints = historicalData.map(d => [d.latitude, d.longitude, d.carbon]); maxValue = 600; }
-
-            heatLayer = L.heatLayer(heatPoints, {
-                radius: 25,
-                blur: 15,
-                maxZoom: 18,
-                max: maxValue,
-                gradient: getGradient(mapType)
-            }).addTo(map);
-            updateLegend(mapType);
-            mapLegend.classList.remove('hidden');
-        }
-    }
+          tempHeatLayer.setLatLngs(tempPoints);
+          humidityHeatLayer.setLatLngs(humidityPoints);
+          co2HeatLayer.setLatLngs(co2Points);
+      }
   }
 
   function updateLegend(type) {
-    let legendContent = '';
-    if (type === 'temperature') { legendContent = `<div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #ff0000;'></div> > 45°C</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #ffff00;'></div> 26-44°C</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #0000ff;'></div> 0-25°C</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #00008b;'></div> < 0°C</div>`; }
-    else if (type === 'humidity') { legendContent = `<div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #0000ff;'></div> > 66%</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #ffff00;'></div> 34-66%</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #ff0000;'></div> < 34%</div>`; }
-    else if (type === 'co2') { legendContent = `<div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #ff0000;'></div> > 500ppm</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #ffff00;'></div> 200-499ppm</div><div class='flex items-center'><div class='w-3 h-3 mr-2 rounded-full' style='background-color: #008000;'></div> < 200ppm</div>`; }
-    mapLegend.innerHTML = legendContent;
+      const legend = document.getElementById('map-legend');
+      if (!type) {
+          legend.classList.add('hidden');
+          return;
+      }
+      
+      let legendContent = `<h4 class="font-bold text-xs mb-1">${type.charAt(0).toUpperCase() + type.slice(1)}</h4>`;
+      let gradientStyle = '';
+
+      if (type === 'temperature') {
+          gradientStyle = 'linear-gradient(to right, #0000ff, #ffff00, #ff0000)';
+          legendContent += `<div class="w-full h-3 rounded-md" style="background: ${gradientStyle};"></div><div class="flex justify-between text-xs mt-1"><span>25°C</span><span>45°C</span></div>`;
+      } else if (type === 'humidity') {
+          gradientStyle = 'linear-gradient(to right, #ffff00, #0000ff, #00008b)';
+          legendContent += `<div class="w-full h-3 rounded-md" style="background: ${gradientStyle};"></div><div class="flex justify-between text-xs mt-1"><span>30%</span><span>80%</span></div>`;
+      } else if (type === 'co2') {
+          gradientStyle = 'linear-gradient(to right, #008000, #ffff00, #ff0000)';
+          legendContent += `<div class="w-full h-3 rounded-md" style="background: ${gradientStyle};"></div><div class="flex justify-between text-xs mt-1"><span>200</span><span>500+</span></div>`;
+      }
+      legend.innerHTML = legendContent;
+      legend.classList.remove('hidden');
   }
 
   // --- ANALYTICS CHART LOGIC ---
@@ -173,12 +246,42 @@ document.addEventListener('DOMContentLoaded', () => {
     setTheme(localStorage.getItem('theme') || 'light');
     const initialCoords = [10.9085, 76.9098];
     map = L.map('map').setView(initialCoords, 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    mainMarker = L.marker(initialCoords).addTo(map).bindPopup("Live Data Point");
     
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    mainMarker = L.marker(initialCoords).addTo(map).bindPopup("Live Data Point");
+
+    const heatOptions = { radius: 25, blur: 15, maxZoom: 18, minOpacity: 0.6 };
+    tempHeatLayer = L.heatLayer([], { ...heatOptions, gradient: getGradient('temperature'), max: 50 });
+    humidityHeatLayer = L.heatLayer([], { ...heatOptions, gradient: getGradient('humidity'), max: 100 });
+    co2HeatLayer = L.heatLayer([], { ...heatOptions, gradient: getGradient('co2'), max: 600 }).addTo(map);
+
+    const overlayMaps = {
+        "<i class='fas fa-thermometer-half mr-2 text-red-500'></i> Temperature": tempHeatLayer,
+        "<i class='fas fa-tint mr-2 text-blue-500'></i> Humidity": humidityHeatLayer,
+        "<i class='fas fa-wind mr-2 text-gray-500'></i> CO₂": co2HeatLayer
+    };
+    
+    layerControl = L.control.layers(null, overlayMaps, { position: 'topright', collapsed: false }).addTo(map);
+    
+    let visibleLayer = 'co2';
+    updateLegend(visibleLayer);
+
+    map.on('overlayadd', function(e) {
+        if (e.name.includes('Temperature')) visibleLayer = 'temperature';
+        else if (e.name.includes('Humidity')) visibleLayer = 'humidity';
+        else if (e.name.includes('CO₂')) visibleLayer = 'co2';
+        updateLegend(visibleLayer);
+    });
+    
+    map.on('overlayremove', function(e) {
+        updateLegend(null);
+    });
+
     fetchData();
     setInterval(fetchData, 5000);
-    updateMapDisplay();
   }
 
   initializeDashboard();

@@ -11,7 +11,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css">
   
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  
 </head>
 <body class="min-h-screen flex flex-col">
   <div id="background-animation"></div>
@@ -41,6 +43,17 @@
   <main class="flex-grow container mx-auto px-4 py-8 z-10">
     <div class="mb-6 border-b border-border"><nav class="flex space-x-4" aria-label="Tabs"><button id="tab-gauge" class="tab-button tab-active shadow-sm"><i class="fas fa-tachometer-alt mr-2"></i>Gauge</button><button id="tab-analytics" class="tab-button shadow-sm"><i class="fas fa-chart-bar mr-2"></i>Analytical Data</button></nav></div>
 
+    <div class="bg-card rounded-xl shadow-md p-6 mb-8">
+      <h2 class="text-xl font-bold text-text-primary mb-3">System Status & Suggestions</h2>
+      <div id="status-panel" class="flex items-center p-4 rounded-lg transition-all duration-500 bg-opacity-20">
+          <div id="status-icon" class="text-2xl mr-4"><i class="fas fa-spinner fa-spin"></i></div>
+          <div>
+              <p id="status-text" class="font-semibold text-text-primary">Initializing and fetching live data...</p>
+              <p id="status-suggestion" class="text-sm text-text-secondary">Please wait.</p>
+          </div>
+      </div>
+    </div>
+
     <div id="tab-content-gauge">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div class="bg-card rounded-xl shadow-md overflow-hidden p-4"><h3 class="text-text-secondary font-semibold mb-2">Temperature</h3><div class="gauge"><div class="gauge-body"><div class="gauge-fill" id="temp-gauge-fill"></div></div><div class="gauge-cover" id="temp-gauge-cover">--</div></div></div>
@@ -65,16 +78,10 @@
       <div class="bg-card rounded-xl shadow-md overflow-hidden lg:col-span-1">
         <div class="card-header px-6 py-4 bg-card-header flex justify-between items-center">
           <h2 class="text-lg font-semibold text-text-primary"><i class="fas fa-map text-green-600 mr-2"></i> Sensor Map</h2>
-          <select id="map-type-filter" class="filter-select text-sm">
-            <option value="marker">Marker</option>
-            <option value="temperature">Temperature</option>
-            <option value="humidity">Humidity</option>
-            <option value="co2" selected>CO2</option>
-          </select>
         </div>
         <div class="p-4 relative">
           <div id="map" class="rounded-lg overflow-hidden h-64"></div>
-          <div id="map-legend" class="absolute bottom-6 right-6 bg-white bg-opacity-75 p-2 rounded-md shadow-lg hidden text-xs"></div>
+          <div id="map-legend" class="absolute bottom-6 right-6 bg-card p-2 rounded-lg shadow-xl hidden text-text-primary w-48"></div>
         </div>
       </div>
     </div>
@@ -99,7 +106,6 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
