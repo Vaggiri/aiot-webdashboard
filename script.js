@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const address = await getAddressFromCoords(lat, lng);
         const formattedData = {
           temperature: liveData.temperature, humidity: liveData.humidity, carbon: liveData.carbon,
-          latitude: lat, longitude: lng, predictedCarbon: liveData.carbon * 1.05,
+          latitude: lat, longitude: lng,
           locationName: address, timestamp: liveData.timestamp
         };
 
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
         checkThresholds(formattedData);
         
         historicalData.push(formattedData);
-        if (historicalData.length > 20) { // Increased history for better heatmap
+        if (historicalData.length > 20) { // Keep history limited to the last 20 data points
             historicalData.shift();
         }
 
@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusPanel.className = 'flex items-center p-4 rounded-lg transition-all duration-500 bg-red-500 bg-opacity-20';
         statusIcon.innerHTML = '<i class="fas fa-wind text-red-500"></i>';
         statusText.textContent = 'High CO₂ Levels Detected!';
-        statusSuggestion.textContent = 'Suggestion: Ensure proper ventilation in the area. High CO₂ can affect cognitive function.';
+        statusSuggestion.textContent = 'Suggestion: Ensure proper ventilation. High CO₂ can affect cognitive function.';
     } else if (data.temperature > THRESHOLDS.temp) {
         statusPanel.className = 'flex items-center p-4 rounded-lg transition-all duration-500 bg-red-500 bg-opacity-20';
         statusIcon.innerHTML = '<i class="fas fa-temperature-high text-red-500"></i>';
@@ -100,11 +100,81 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // --- ACTIVITY SUGGESTIONS ---
+  function updateActivitySuggestions(data) {
+      const iconEl = document.getElementById('activity-icon');
+      const titleEl = document.getElementById('activity-title');
+      const descriptionEl = document.getElementById('activity-description');
+      const { temperature, humidity, carbon } = data;
+
+      if (carbon > 600 || temperature > 38) {
+          iconEl.innerHTML = '<i class="fas fa-house-user text-blue-500"></i>';
+          titleEl.textContent = "Best to Stay Indoors";
+          descriptionEl.textContent = `High CO₂ (${carbon}ppm) or extreme heat (${temperature}°C) makes outdoor activities unsafe. Consider a museum or mall.`;
+      } else if (temperature > 20 && temperature < 30 && humidity < 70 && carbon < 450) {
+          iconEl.innerHTML = '<i class="fas fa-campground text-green-500"></i>';
+          titleEl.textContent = "Perfect for a Picnic or Camping!";
+          descriptionEl.textContent = "Ideal weather and excellent air quality. A great opportunity for jogging, camping, or a family picnic.";
+      } else if (carbon > 450) {
+          iconEl.innerHTML = '<i class="fas fa-mask-face text-yellow-500"></i>';
+          titleEl.textContent = "Air Quality is Moderate";
+          descriptionEl.textContent = "Sensitive groups should consider limiting prolonged outdoor exertion. Light activities should be fine.";
+      } else if (temperature > 32 || humidity > 75) {
+          iconEl.innerHTML = '<i class="fas fa-cloud-sun text-orange-500"></i>';
+          titleEl.textContent = "Caution: Heat and Humidity";
+          descriptionEl.textContent = "It's quite warm and humid. If you're planning an event, ensure there's plenty of shade and water.";
+      } else {
+          iconEl.innerHTML = '<i class="fas fa-city text-gray-500"></i>';
+          titleEl.textContent = "Conditions are Average";
+          descriptionEl.textContent = "No major alerts. Most outdoor activities are suitable with standard precautions.";
+      }
+  }
+  
+  // --- Personalize to User's Location ---
+  async function getUserLocationAndPersonalize() {
+    if (!navigator.geolocation) {
+      console.log("Geolocation is not supported by this browser.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      const address = await getAddressFromCoords(latitude, longitude);
+      document.getElementById("sensorLocationVal").textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (Your Location)`;
+      document.getElementById("sensorLocationName").textContent = address;
+      
+      // Add a small disclaimer
+      const nameElement = document.getElementById("sensorLocationName");
+      let disclaimer = nameElement.querySelector('.disclaimer');
+      if (!disclaimer) {
+          disclaimer = document.createElement('p');
+          disclaimer.className = 'text-xs text-text-secondary italic mt-1 disclaimer';
+          nameElement.appendChild(disclaimer);
+      }
+      disclaimer.textContent = '*Suggestions use your location with data from a central demo sensor.';
+
+    }, () => {
+      console.log("Unable to retrieve your location. Showing default sensor location.");
+    });
+  }
+
+
   // --- DASHBOARD UPDATE ---
-  function updateGauge(fillId, coverId, value, max, unit) {
+  function updateGauge(fillId, coverId, value, max, unit, gaugeType) {
     const fillEl = document.getElementById(fillId);
     const coverEl = document.getElementById(coverId);
     if (!fillEl || !coverEl) return;
+
+    // Update color based on the new logic
+    let color;
+    if (gaugeType === 'temperature') {
+        color = getTemperatureColor(value);
+    } else if (gaugeType === 'carbon') {
+        color = getCO2Color(value);
+    }
+    // For humidity, we keep the gradient, but we can set a solid color if needed
+    if (color) {
+        fillEl.style.background = color;
+    }
 
     const percentage = Math.max(0, Math.min(1, value / max));
     fillEl.style.transform = `rotate(${percentage / 2}turn)`;
@@ -135,20 +205,21 @@ document.addEventListener('DOMContentLoaded', () => {
   
   function updateDashboard(data) {
     document.getElementById("lastUpdated").textContent = new Date(data.timestamp).toLocaleTimeString('en-US');
-    updateGauge('temp-gauge-fill', 'temp-gauge-cover', data.temperature, 50, '°C');
-    updateGauge('humidity-gauge-fill', 'humidity-gauge-cover', data.humidity, 100, '%');
-    updateGauge('carbon-gauge-fill', 'carbon-gauge-cover', data.carbon, 1000, 'ppm');
-    updateGauge('prediction-gauge-fill', 'prediction-gauge-cover', data.predictedCarbon, 1000, 'ppm');
-    document.getElementById("sensorLocationVal").textContent = `${data.latitude.toFixed(4)}, ${data.longitude.toFixed(4)}`;
-    document.getElementById("sensorLocationName").textContent = data.locationName;
+    updateGauge('temp-gauge-fill', 'temp-gauge-cover', data.temperature, 100, '°C', 'temperature');
+    updateGauge('humidity-gauge-fill', 'humidity-gauge-cover', data.humidity, 100, '%', 'humidity');
+    updateGauge('carbon-gauge-fill', 'carbon-gauge-cover', data.carbon, 800, 'ppm', 'carbon');
+    
+    // Only update map marker, not the location text which is now personalized
     mainMarker.setLatLng([data.latitude, data.longitude]);
+
     updateStatusPanel(data);
+    updateActivitySuggestions(data); 
   }
 
   // --- ALERTING SYSTEM ---
   const THRESHOLDS = { temp: 45, co2: 500, humidity: 80 }; let lastAlertTimes = { temp: 0, co2: 0, humidity: 0 }; const ALERT_COOLDOWN = 300000;
   function checkThresholds(data) { const now = Date.now(); if (data.temperature > THRESHOLDS.temp && (now - lastAlertTimes.temp > ALERT_COOLDOWN)) { sendAlert('Temperature', `${data.temperature}°C`, 'error'); lastAlertTimes.temp = now; } if (data.carbon > THRESHOLDS.co2 && (now - lastAlertTimes.co2 > ALERT_COOLDOWN)) { sendAlert('CO2 Level', `${data.carbon} ppm`, 'error'); lastAlertTimes.co2 = now; } if (data.humidity > THRESHOLDS.humidity && (now - lastAlertTimes.humidity > ALERT_COOLDOWN)) { sendAlert('Humidity', `${data.humidity}%`, 'warning'); lastAlertTimes.humidity = now; } }
-  function sendAlert(metric, value, type) { const location = document.getElementById('sensorLocationName').textContent; const message = `High ${metric} detected: ${value} at ${location}.`; const timestamp = new Date().toLocaleString(); console.log(`--- ALERT: SIMULATING SMS to ${userDetails?.phone} and Email to ${userDetails?.email} ---`); console.log(message); showToast(message, type); activeAlerts.unshift({ metric, value, type, location, timestamp }); unreadAlertCount++; updateAlertBadge(); }
+  function sendAlert(metric, value, type) { const location = document.getElementById('sensorLocationName').textContent.split('*')[0]; const message = `High ${metric} detected: ${value} at ${location}.`; const timestamp = new Date().toLocaleString(); console.log(`--- ALERT: SIMULATING SMS to ${userDetails?.phone} and Email to ${userDetails?.email} ---`); console.log(message); showToast(message, type); activeAlerts.unshift({ metric, value, type, location, timestamp }); unreadAlertCount++; updateAlertBadge(); }
   function showToast(message, type = 'error') { const container = document.getElementById('toast-container'); const toast = document.createElement('div'); toast.className = `toast toast-${type}`; toast.innerHTML = `<strong><i class="fas fa-exclamation-triangle mr-2"></i>Alert!</strong><p class="text-sm">${message}</p>`; container.appendChild(toast); setTimeout(() => toast.classList.add('show'), 100); setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 5000); }
 
   // --- Alert Modal Logic ---
@@ -158,6 +229,43 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateAlertBadge() { if (unreadAlertCount > 0) { alertCountBadge.textContent = unreadAlertCount; alertCountBadge.classList.remove('hidden'); } else { alertCountBadge.classList.add('hidden'); } }
   function renderAlertsInModal() { alertsList.innerHTML = ''; if (activeAlerts.length === 0) { noAlertsMessage.classList.remove('hidden'); alertsList.appendChild(noAlertsMessage); } else { noAlertsMessage.classList.add('hidden'); activeAlerts.forEach(alert => { const alertDiv = document.createElement('div'); alertDiv.className = `bg-card-header p-3 rounded-md border-l-4 ${alert.type === 'error' ? 'border-red-500' : 'border-yellow-500'}`; alertDiv.innerHTML = `<p class="font-semibold text-text-primary">${alert.metric}: ${alert.value}</p><p class="text-xs text-text-secondary">${alert.location}</p><p class="text-xs text-text-secondary">${alert.timestamp}</p>`; alertsList.appendChild(alertDiv); }); } }
   
+  // --- COLOR HELPER FUNCTIONS ---
+  function interpolateColor(color1, color2, factor) {
+      const r1 = parseInt(color1.substring(1, 3), 16);
+      const g1 = parseInt(color1.substring(3, 5), 16);
+      const b1 = parseInt(color1.substring(5, 7), 16);
+      const r2 = parseInt(color2.substring(1, 3), 16);
+      const g2 = parseInt(color2.substring(3, 5), 16);
+      const b2 = parseInt(color2.substring(5, 7), 16);
+      const r = Math.round(r1 + factor * (r2 - r1));
+      const g = Math.round(g1 + factor * (g2 - g1));
+      const b = Math.round(b1 + factor * (b2 - b1));
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  function getTemperatureColor(value) {
+      const blue = "#3b82f6", green = "#22c55e", yellow = "#eab308";
+      const lightRed = "#f87171", midRed = "#ef4444", darkRed = "#b91c1c";
+
+      if (value <= 25) return interpolateColor(blue, green, value / 25);
+      if (value <= 40) return interpolateColor(green, yellow, (value - 25) / 15);
+      if (value <= 50) return interpolateColor(yellow, lightRed, (value - 40) / 10);
+      if (value <= 70) return interpolateColor(lightRed, midRed, (value - 50) / 20);
+      return interpolateColor(midRed, darkRed, (value - 70) / 30);
+  }
+
+  function getCO2Color(value) {
+      const green = "#22c55e", yellow = "#eab308";
+      const lightRed = "#f87171", midRed = "#ef4444", darkRed = "#b91c1c";
+
+      if (value < 350) return green;
+      if (value <= 450) return interpolateColor(green, yellow, (value - 350) / 100);
+      if (value <= 500) return interpolateColor(yellow, lightRed, (value - 450) / 50);
+      if (value <= 700) return interpolateColor(lightRed, midRed, (value - 500) / 200);
+      return interpolateColor(midRed, darkRed, (value - 700) / 100);
+  }
+
+
   // --- GLOBAL MAP VARIABLES ---
   let tempHeatLayer, humidityHeatLayer, co2HeatLayer, layerControl;
 
@@ -244,6 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- INITIALIZATION ---
   function initializeDashboard() {
     setTheme(localStorage.getItem('theme') || 'light');
+    getUserLocationAndPersonalize(); // Ask for user's location
     const initialCoords = [10.9085, 76.9098];
     map = L.map('map').setView(initialCoords, 15);
     
